@@ -1,0 +1,334 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <title>krunker-text-3d-gen</title>
+    <meta charset="utf-8" />
+    <meta
+      name="viewport"
+      content="width=device-width, user-scalable=no, minimum-scale=1.0, maximum-scale=1.0"
+    />
+    <link rel="stylesheet" type="text/css" href="./HoodUI.css" />
+    <style type="text/css">
+      body {
+        margin: 0;
+        overflow: hidden;
+      }
+      canvas {
+        position: absolute;
+        z-index: -1;
+      }
+    </style>
+  </head>
+  <body style="background: #0e0e0e">
+    <script type="module">
+      import * as THREE from "https://threejs.org/build/three.module.js";
+
+      import { TTFLoader } from "https://threejs.org/examples/jsm/loaders/TTFLoader.js";
+
+      import { OrbitControls } from "https://threejs.org/examples/jsm/controls/OrbitControls.js";
+
+      import { EffectComposer } from "https://threejs.org/examples/jsm/postprocessing/EffectComposer.js";
+      import { RenderPass } from "https://threejs.org/examples/jsm/postprocessing/RenderPass.js";
+      import { UnrealBloomPass } from "https://threejs.org/examples/jsm/postprocessing/UnrealBloomPass.js";
+
+      import {
+        GodRaysFakeSunShader,
+        GodRaysDepthMaskShader,
+        GodRaysCombineShader,
+        GodRaysGenerateShader,
+      } from "./jsm/shaders/GodRaysShader.js";
+      
+      import HoodUI from "./HoodUI.js";
+
+      window.load_font = function (url) {
+        return new Promise((yes, no) =>
+          new TTFLoader().load(url, (json) => yes(new THREE.Font(json)))
+        );
+      };
+
+      var container;
+      var camera,
+        cameraTarget,
+        scene,
+        renderer,
+        composer,
+        hui,
+        Shaderhui,
+        huiBody,
+        vertices = [],
+        ShaderhuiBody,
+        materials = [],
+        parameters,
+        params = new Map(new URLSearchParams(location.search));
+      var group,
+        textMesh,
+        textGeo,
+        material,
+        font,
+        controls,
+        clock = new THREE.Clock();
+      var container = document.createElement("div");
+      window.config = {
+        text: "Hoodgail",
+        color: "#ffffff",
+        ambient: "#ffffff",
+        light: "#ffffff",
+        stars: true,
+        height: 20,
+        size: 70,
+        hover: 30,
+        curveSegments: 4,
+        bevelThickness: 2,
+        bevelSize: 1.5,
+      };
+      [...params.keys()].forEach((r) => (config[r] = params.get(r)));
+      window.shader = {
+        exposure: 1,
+        bloomStrength: 0.1,
+        bloomThreshold: 0.1,
+        bloomRadius: 0.1,
+
+        exposureStep: 0.0001,
+        exposureMax: 2,
+        bloomThresholdStep: 0.001,
+        bloomThresholdMax: 1,
+        bloomRadiusStep: 0.001,
+        bloomRadiusMax: 3,
+        bloomStrengthStep: 0.001,
+        bloomRadiusMax: 1,
+      };
+      var windowHalfX = window.innerWidth / 2;
+
+      init().then(animate);
+
+      async function init() {
+        hui = new HoodUI("config");
+        hui.setHeader("Text Menu");
+        huiBody = hui.render;
+        hui.dragElement(huiBody);
+        document.body.append(huiBody);
+        hui.hideOnDBclick;
+
+        Shaderhui = new HoodUI("shader");
+        Shaderhui.setHeader("Shader Menu");
+        ShaderhuiBody = Shaderhui.render;
+        ShaderhuiBody.style.right = "0";
+        Shaderhui.dragElement(ShaderhuiBody);
+        document.body.append(ShaderhuiBody);
+        Shaderhui.hideOnDBclick;
+        document.body.appendChild(container);
+
+        // CAMERA
+
+        camera = new THREE.PerspectiveCamera(
+          70,
+          window.innerWidth / window.innerHeight,
+          1,
+          50000
+        );
+        camera.position.set(0, 400, 700);
+
+        cameraTarget = new THREE.Vector3(0, 150, 0);
+        // SCENE
+
+        scene = new THREE.Scene();
+
+        scene.fog = new THREE.Fog(0x000000, 250, 1400);
+
+        window.THREE = THREE;
+        window.scene = scene;
+        // LIGHTS
+
+        var dirLight = new THREE.DirectionalLight(
+          new THREE.Color(config.light),
+          0.125
+        );
+        dirLight.position.set(-10.21, 7.79, 6.21);
+        dirLight.castShadow = true;
+        scene.add(dirLight);
+
+        var ambient = new THREE.AmbientLight(
+          new THREE.Color(config.ambient),
+          1.5
+        );
+        ambient.position.set(0, 100, 90);
+        scene.add(ambient);
+
+        material = new THREE.MeshPhongMaterial({
+          color: config.color,
+          flatShading: false,
+        });
+
+        group = new THREE.Group();
+        group.position.y = 100;
+
+        scene.add(group);
+
+        var loader = new TTFLoader();
+        font = await load_font("FFFOWARD.ttf");
+        initText();
+
+        // RENDERER
+
+        renderer = new THREE.WebGLRenderer({
+          antialias: false,
+          alpha: true,
+        });
+        renderer.setClearColor(0x000000, 0); // the default
+        window.renderer = renderer;
+        renderer.setPixelRatio(window.devicePixelRatio);
+        renderer.toneMapping = THREE.ReinhardToneMapping;
+        renderer.setSize(window.innerWidth, window.innerHeight);
+        container.appendChild(renderer.domElement);
+
+        // CONTROLLS
+
+        controls = new OrbitControls(camera, renderer.domElement);
+        controls.screenSpacePanning = true;
+        controls.minDistance = 100;
+        controls.maxDistance = 5000;
+
+        // BLOOM
+
+        var renderScene = new RenderPass(scene, camera);
+
+        var bloomPass = new UnrealBloomPass(
+          new THREE.Vector2(window.innerWidth, window.innerHeight),
+          1.5,
+          0.4,
+          0.85
+        );
+        function InitShaderConfigs() {
+          bloomPass.threshold = shader.bloomThreshold;
+          bloomPass.strength = shader.bloomStrength;
+          bloomPass.radius = shader.bloomRadius;
+          renderer.toneMappingExposure = Math.pow(shader.exposure, 4.0);
+        }
+        InitShaderConfigs();
+        hui.onChange = function () {
+          refreshText();
+          ambient.color = new THREE.Color(config.ambient);
+          dirLight.color = new THREE.Color(config.light);
+        };
+        Shaderhui.onChange = InitShaderConfigs;
+        composer = new EffectComposer(renderer);
+        composer.addPass(renderScene);
+        composer.addPass(bloomPass);
+
+        // EVENTS
+
+        // STARS
+        var geometry = new THREE.BufferGeometry();
+        var textureLoader = new THREE.TextureLoader();
+        var sprite1 = textureLoader.load("ball1.png");
+        var sprite2 = textureLoader.load("ball2.png");
+        var sprite3 = textureLoader.load("ball3.png");
+        for (var i = 0; i < 10000; i++) {
+          var x = Math.random() * 2000 - 1000;
+          var y = Math.random() * 2000 - 1000;
+          var z = Math.random() * 2000 - 1000;
+
+          vertices.push(x, y, z);
+        }
+
+        geometry.setAttribute(
+          "position",
+          new THREE.Float32BufferAttribute(vertices, 3)
+        );
+
+        parameters = [
+          [[1.0, 0.2, 0.5], sprite2, 20],
+          [[0.95, 0.1, 0.5], sprite2, 15],
+          [[0.9, 0.05, 0.5], sprite3, 10],
+          [[0.85, 0, 0.5], sprite3, 8],
+          [[0.8, 0, 0.5], sprite2, 5],
+        ];
+
+        for (var i = 0; i < parameters.length; i++) {
+          var color = parameters[i][0];
+          var sprite = parameters[i][1];
+          var size = parameters[i][2];
+
+          materials[i] = new THREE.PointsMaterial({
+            size: size,
+            map: sprite,
+            blending: THREE.AdditiveBlending,
+            depthTest: false,
+            transparent: true,
+          });
+          materials[i].color.setHSL(color[0], color[1], color[2]);
+
+          var particles = new THREE.Points(geometry, materials[i]);
+
+          particles.rotation.x = Math.random() * 6;
+          particles.rotation.y = Math.random() * 6;
+          particles.rotation.z = Math.random() * 6;
+
+          scene.add(particles);
+        }
+
+        window.addEventListener("resize", onWindowResize, false);
+      }
+      function onWindowResize() {
+        windowHalfX = window.innerWidth / 2;
+        camera.aspect = window.innerWidth / window.innerHeight;
+        camera.updateProjectionMatrix();
+        renderer.setSize(window.innerWidth, window.innerHeight);
+      }
+
+      function initText() {
+        material.color = new THREE.Color(config.color);
+        textGeo = new THREE.TextBufferGeometry(config.text, {
+          font: font,
+          size: config.size,
+          height: config.height,
+          curveSegments: config.curveSegments,
+          bevelThickness: config.bevelThickness,
+          bevelSize: config.bevelSize,
+          bevelEnabled: true,
+        });
+
+        textGeo.computeBoundingBox();
+        textGeo.computeVertexNormals();
+
+        var centerOffset =
+          -0.5 * (textGeo.boundingBox.max.x - textGeo.boundingBox.min.x);
+
+        textMesh = new THREE.Mesh(textGeo, material);
+
+        textMesh.position.x = centerOffset;
+        textMesh.position.y = config.hover;
+        textMesh.position.z = 0;
+
+        textMesh.rotation.x = 0;
+        textMesh.rotation.y = Math.PI * 2;
+        textMesh.receiveShadow = true;
+        group.add(textMesh);
+      }
+
+      function refreshText() {
+        group.remove(textMesh);
+        if (!config.text) return;
+        initText();
+      }
+
+      function animate() {
+        requestAnimationFrame(animate);
+
+        camera.lookAt(cameraTarget);
+        var time = Date.now() * 0.00005;
+        for (var i = 0; i < scene.children.length; i++) {
+          var object = scene.children[i];
+
+          if (object instanceof THREE.Points) {
+            object.visible = config.stars;
+            object.rotation.y = time * (i < 4 ? i + 1 : -(i + 1));
+          }
+        }
+
+        renderer.render(scene, camera);
+        composer.render();
+      }
+    </script>
+  </body>
+</html>
