@@ -29,14 +29,13 @@
 
       import { EffectComposer } from "https://threejs.org/examples/jsm/postprocessing/EffectComposer.js";
       import { RenderPass } from "https://threejs.org/examples/jsm/postprocessing/RenderPass.js";
+      import { ShaderPass } from 'https://threejs.org/examples/jsm/postprocessing/ShaderPass.js';
+
+
+      import { RGBShiftShader } from 'https://threejs.org/examples/jsm/shaders/RGBShiftShader.js';
       import { UnrealBloomPass } from "https://threejs.org/examples/jsm/postprocessing/UnrealBloomPass.js";
 
-      import {
-        GodRaysFakeSunShader,
-        GodRaysDepthMaskShader,
-        GodRaysCombineShader,
-        GodRaysGenerateShader,
-      } from "./jsm/shaders/GodRaysShader.js";
+      import { AfterimagePass } from 'https://threejs.org/examples/jsm/postprocessing/AfterimagePass.js';
       
       import HoodUI from "./HoodUI.js";
 
@@ -54,6 +53,7 @@
         composer,
         hui,
         Shaderhui,
+        afterimagePass,
         huiBody,
         vertices = [],
         ShaderhuiBody,
@@ -73,6 +73,12 @@
         color: "#ffffff",
         ambient: "#ffffff",
         light: "#ffffff",
+        background:"#000000",
+        rotate:true,
+        speed:0.1,
+        speedMax:10,
+        speedMin:0.1,
+        speedStep:0.001,
         stars: true,
         height: 20,
         size: 70,
@@ -83,6 +89,7 @@
       };
       [...params.keys()].forEach((r) => (config[r] = params.get(r)));
       window.shader = {
+        resolution:1,
         exposure: 1,
         bloomStrength: 0.1,
         bloomThreshold: 0.1,
@@ -188,7 +195,8 @@
         controls.minDistance = 100;
         controls.maxDistance = 5000;
 
-        // BLOOM
+        // SHADERS
+        composer = new EffectComposer(renderer);
 
         var renderScene = new RenderPass(scene, camera);
 
@@ -197,23 +205,49 @@
           1.5,
           0.4,
           0.85
-        );
+        );  
+
+
+        window.rgbShader = new ShaderPass( RGBShiftShader );
+        window.rgbShader.uniforms.amount.value = parseInt(config.rbgAmount);
+        composer.addPass( rgbShader );
+
+        afterimagePass = new AfterimagePass();
+        composer.addPass( afterimagePass );
+        function changeResolution(canvas, scaleFactor) {
+            // Set up CSS size.
+            canvas.style.width = canvas.style.width || canvas.width + 'px';
+            canvas.style.height = canvas.style.height || canvas.height + 'px';
+
+            // Resize canvas and scale future draws.
+            canvas.width = Math.ceil(canvas.width * scaleFactor);
+            canvas.height = Math.ceil(canvas.height * scaleFactor);
+            var ctx = canvas.getContext('2d');
+            ctx.scale(scaleFactor, scaleFactor);
+        }
         function InitShaderConfigs() {
           bloomPass.threshold = shader.bloomThreshold;
           bloomPass.strength = shader.bloomStrength;
           bloomPass.radius = shader.bloomRadius;
           renderer.toneMappingExposure = Math.pow(shader.exposure, 4.0);
+          switch(name){
+            case"resolution":
+              changeResolution(renderer.domElement, config.resolution)
+            break;
+          }
         }
         InitShaderConfigs();
-        hui.onChange = function () {
+        hui.onChange = function (name) {
           refreshText();
           ambient.color = new THREE.Color(config.ambient);
           dirLight.color = new THREE.Color(config.light);
+          scene.background = new THREE.Color(config.background)
         };
         Shaderhui.onChange = InitShaderConfigs;
-        composer = new EffectComposer(renderer);
+
         composer.addPass(renderScene);
         composer.addPass(bloomPass);
+
 
         // EVENTS
 
@@ -223,7 +257,7 @@
         var sprite1 = textureLoader.load("ball1.png");
         var sprite2 = textureLoader.load("ball2.png");
         var sprite3 = textureLoader.load("ball3.png");
-        for (var i = 0; i < 10000; i++) {
+        for (var i = 0; i < 100; i++) {
           var x = Math.random() * 2000 - 1000;
           var y = Math.random() * 2000 - 1000;
           var z = Math.random() * 2000 - 1000;
@@ -274,6 +308,7 @@
         camera.aspect = window.innerWidth / window.innerHeight;
         camera.updateProjectionMatrix();
         renderer.setSize(window.innerWidth, window.innerHeight);
+        composer.setSize(window.innerWidth, window.innerHeight);
       }
 
       function initText() {
@@ -290,13 +325,12 @@
 
         textGeo.computeBoundingBox();
         textGeo.computeVertexNormals();
-
-        var centerOffset =
-          -0.5 * (textGeo.boundingBox.max.x - textGeo.boundingBox.min.x);
-
+        window.textGeo = textGeo
+        var centerOffset = -0.5 * (textGeo.boundingBox.max.x - textGeo.boundingBox.min.x);
+        THREE.GeometryUtils.center( textGeo )
         textMesh = new THREE.Mesh(textGeo, material);
 
-        textMesh.position.x = centerOffset;
+        //textMesh.position.x = centerOffset;
         textMesh.position.y = config.hover;
         textMesh.position.z = 0;
 
@@ -319,13 +353,14 @@
         var time = Date.now() * 0.00005;
         for (var i = 0; i < scene.children.length; i++) {
           var object = scene.children[i];
-
           if (object instanceof THREE.Points) {
             object.visible = config.stars;
             object.rotation.y = time * (i < 4 ? i + 1 : -(i + 1));
           }
         }
-
+        if(config.rotate) {
+          textMesh.rotation.y += config.speed/10;
+        }
         renderer.render(scene, camera);
         composer.render();
       }
